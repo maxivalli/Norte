@@ -26,7 +26,7 @@ app.use(express.json()); // Importante: debajo del CORS
 const isProduction = process.env.NODE_ENV === 'production';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_PUBLIC, // Para trabajar en producción poner DARABASE_URL
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 

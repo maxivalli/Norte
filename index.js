@@ -132,16 +132,13 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 5. RUTA PARA COMPARTIR (CORRECCIÓN DEFINITIVA) ---
+// --- 5. RUTA PARA COMPARTIR (OPTIMIZADA PARA FACEBOOK) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const FRONTEND_BASE_URL = "https://norteautomotores.up.railway.app";
-  
-  // Detectamos si el que entra es un bot de redes sociales
-  const ua = req.headers['user-agent'] || '';
-  const isBot = /facebookexternalhit|Facebot|WhatsApp|Twitterbot|Pinterest/i.test(ua);
 
   try {
+    // Buscamos todos para encontrar el match de slug (o podrías optimizarlo con una columna slug en DB)
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
@@ -149,38 +146,40 @@ app.get("/share/auto/:slug", async (req, res) => {
 
     const titulo = `${auto.nombre} | Norte Automotores`;
     const precioFormat = Number(auto.precio) === 0 ? "Consultar" : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
-    const descripcion = `🚗 ${auto.nombre} - Año ${auto.anio} - ${precioFormat}. Hacé clic para ver fotos y equipamiento completo.`;
+    const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Motor ${auto.motor}. Ver más detalles en Norte Automotores.`;
     
-    // Cloudinary a veces da problemas si la URL no es perfecta
+    // Aseguramos que la imagen sea HTTPS y de buen tamaño para FB
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("http://", "https://") 
       : "";
 
-    // SI ES UN BOT: Le enviamos el HTML puro con metas y SIN redirección
-    if (isBot) {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="UTF-8">
-          <title>${titulo}</title>
-          <meta property="og:title" content="${titulo}">
-          <meta property="og:description" content="${descripcion}">
-          <meta property="og:image" content="${imagen}">
-          <meta property="og:image:secure_url" content="${imagen}">
-          <meta property="og:image:type" content="image/jpeg">
-          <meta property="og:image:width" content="1200">
-          <meta property="og:image:height" content="630">
-          <meta property="og:type" content="website">
-          <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
-        </head>
-        <body></body>
-        </html>
-      `);
-    }
+    res.send(`
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${titulo}</title>
 
-    // SI ES UN HUMANO: Redirigimos de inmediato al catálogo
-    res.redirect(`${FRONTEND_BASE_URL}/#catalogo`);
+  <meta property="og:title" content="${titulo}">
+  <meta property="og:description" content="${descripcion}">
+  <meta property="og:image" content="${imagen}">
+  <meta property="og:image:secure_url" content="${imagen}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
+  <meta property="og:site_name" content="Norte Automotores">
+
+  <!-- NO REDIRIGIR INMEDIATAMENTE -->
+  <meta http-equiv="refresh" content="5;url=${FRONTEND_BASE_URL}/#catalogo">
+</head>
+<body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding-top:50px;">
+  <h2>Norte Automotores</h2>
+  <p>Cargando vehículo...</p>
+  <p>Si no redirige automáticamente, <a style="color:#fff;" href="${FRONTEND_BASE_URL}/#catalogo">tocá acá</a></p>
+</body>
+</html>
+`);
 
   } catch (err) {
     res.redirect(FRONTEND_BASE_URL);

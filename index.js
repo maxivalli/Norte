@@ -173,7 +173,7 @@ app.get("/share/auto/:slug", async (req, res) => {
   }
 });
 
-// --- 7. RUTA PARA PREVISUALIZACIÓN SEO Y WHATSAPP ---
+/// --- 7. RUTA PARA PREVISUALIZACIÓN SEO Y WHATSAPP (CORREGIDA) ---
 app.get("/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const indexPath = path.join(__dirname, "dist", "index.html");
@@ -181,26 +181,22 @@ app.get("/auto/:slug", async (req, res) => {
 
   try {
     const result = await pool.query("SELECT * FROM autos");
-    // Buscamos el auto por slug
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
     if (!auto || !fs.existsSync(indexPath)) {
       return res.sendFile(indexPath);
     }
 
-    // Leemos el HTML original de React
     let html = fs.readFileSync(indexPath, "utf8");
     
     const titulo = `${auto.nombre} | Norte Automotores`;
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
-    
-    // Imagen optimizada para la miniatura
+    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}.`;
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
-    // Inyectamos los Meta Tags y el <base href> para que no se rompan los estilos
+    // Construimos el bloque SEO de forma aislada
     const metaTags = `
       <base href="/">
       <title>${titulo}</title>
@@ -213,10 +209,15 @@ app.get("/auto/:slug", async (req, res) => {
       <meta name="twitter:card" content="summary_large_image">
     `;
 
-    // Reemplazamos el title original por todo nuestro bloque de SEO
-    html = html.replace(/<title>.*?<\/title>/, metaTags);
+    // CAMBIO CLAVE: En lugar de reemplazar el title con regex, 
+    // lo insertamos justo después de la etiqueta <head> para no romper el JS que está al final.
+    if (html.includes("<head>")) {
+      html = html.replace("<head>", `<head>${metaTags}`);
+    } else {
+      // Si no encuentra <head>, intentamos un reemplazo más conservador
+      html = html.replace(/<title>.*?<\/title>/, metaTags);
+    }
     
-    // Enviamos el HTML modificado
     res.send(html);
   } catch (err) {
     console.error("Error en SEO:", err);

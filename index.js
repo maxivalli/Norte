@@ -59,6 +59,8 @@ const inicializarTabla = async () => {
   }
 };
 
+await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS visitas INTEGER DEFAULT 0;`);
+
 inicializarTabla();
 
 // --- 4. FUNCIONES AUXILIARES ---
@@ -178,7 +180,24 @@ app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// --- 8. INICIO DEL SERVIDOR ---
+// --- 8. RUTA PARA INCREMENTAR VISITAS ---
+app.patch("/api/autos/:id/visita", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = `UPDATE autos SET visitas = visitas + 1 WHERE id = $1 RETURNING visitas`;
+    const result = await pool.query(query, [id]);
+    
+    if (result.rows.length > 0) {
+      res.json({ visitas: result.rows[0].visitas });
+    } else {
+      res.status(404).json({ error: "Auto no encontrado" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: "Error al actualizar visitas" });
+  }
+});
+
+// --- 9. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);

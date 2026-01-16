@@ -124,107 +124,61 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. RUTA ESPECIAL PARA COMPARTIR (La "Página Fantasma" para WhatsApp) ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR (Redirige al FRONTEND) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
+  // URL final donde el usuario debe aterrizar
+  const URL_DESTINO_FRONT = `https://norteautomotores.up.railway.app/auto/${slug}`;
 
   try {
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
-    if (!auto) {
-      return res.redirect("/");
-    }
+    if (!auto) return res.redirect("https://norteautomotores.up.railway.app");
 
     const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
-    
-    // Imagen optimizada para WhatsApp
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
+    // Respondemos con un HTML que tiene los metatags para WhatsApp
+    // pero un script de redirección para el humano
     res.send(`
       <!DOCTYPE html>
       <html lang="es">
       <head>
         <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${titulo}</title>
-        <meta name="description" content="${desc}">
         <meta property="og:title" content="${titulo}">
-        <meta property="og:description" content="${desc}">
         <meta property="og:image" content="${imagen}">
-        <meta property="og:image:width" content="800">
-        <meta property="og:image:height" content="450">
-        <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
         <meta property="og:type" content="website">
-        <meta name="twitter:card" content="summary_large_image">
+        <meta property="og:url" content="${URL_DESTINO_FRONT}">
+        
         <script>
-          window.location.href = "/auto/${slug}";
+          window.location.href = "${URL_DESTINO_FRONT}";
         </script>
+        
+        <meta http-equiv="refresh" content="0;url=${URL_DESTINO_FRONT}">
       </head>
-      <body style="background-color: #f4f4f4; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
-        <div style="text-align: center;">
-          <h2>Cargando detalles de ${auto.nombre}...</h2>
-          <p>Si no eres redirigido, <a href="/auto/${slug}">haz clic aquí</a></p>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f4f4;">
+        <div style="padding: 20px; border: 1px solid #ddd; display: inline-block; background: white; border-radius: 8px;">
+          <h2>Redirigiendo a Norte Automotores...</h2>
+          <p>Si no eres redirigido automáticamente, <a href="${URL_DESTINO_FRONT}">haz clic aquí</a>.</p>
         </div>
       </body>
       </html>
     `);
   } catch (err) {
-    console.error("Error en ruta de compartir:", err);
-    res.redirect("/");
+    res.redirect("https://norteautomotores.up.railway.app");
   }
 });
 
-// --- 7. RUTA PARA PREVISUALIZACIÓN SEO (Carga el index.html de React) ---
-app.get("/auto/:slug", async (req, res) => {
-  const { slug } = req.params;
-  const indexPath = path.join(__dirname, "dist", "index.html");
-
-  try {
-    const result = await pool.query("SELECT * FROM autos");
-    const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
-
-    if (!auto || !fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
-    }
-
-    let html = fs.readFileSync(indexPath, "utf8");
-    const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
-    
-    const imagen = auto.imagenes && auto.imagenes[0] 
-      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
-      : "";
-
-    const metaTags = `
-      <title>${titulo}</title>
-      <meta name="description" content="${desc}">
-      <meta property="og:title" content="${titulo}">
-      <meta property="og:description" content="${desc}">
-      <meta property="og:image" content="${imagen}">
-      <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
-      <meta property="og:type" content="website">
-      <meta name="twitter:card" content="summary_large_image">
-    `;
-
-    html = html.replace(/<title>.*?<\/title>/, metaTags);
-    res.send(html);
-  } catch (err) {
-    res.sendFile(indexPath);
-  }
-});
-
-// --- 8. RUTA COMODÍN PARA REACT ---
+// --- 7. RUTA COMODÍN PARA REACT ---
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// --- 9. INICIO DEL SERVIDOR ---
+// --- 8. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);

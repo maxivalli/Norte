@@ -40,7 +40,6 @@ const inicializarTabla = async () => {
       nombre VARCHAR(255) NOT NULL,
       precio NUMERIC DEFAULT 0,
       moneda VARCHAR(10) DEFAULT '$',
-      color VARCHAR(50),
       imagenes TEXT[], 
       motor VARCHAR(100),
       transmision VARCHAR(50),
@@ -87,17 +86,12 @@ app.get("/api/autos", async (req, res) => {
 
 app.post("/api/autos", async (req, res) => {
   try {
-    // AGREGAMOS 'color' a la deconstrucción
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
-    
-    // AGREGAMOS 'color' y el parámetro '$12' a la query
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
     const query = `
       INSERT INTO autos 
-      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *`;
-    
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, color];
-    
+      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -108,16 +102,11 @@ app.post("/api/autos", async (req, res) => {
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    // AGREGAMOS 'color' a la deconstrucción
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
-    
-    // AGREGAMOS 'color=$12' y movemos el ID a '$13'
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
     const query = `
-      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12
-      WHERE id=$13 RETURNING *`;
-    
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, color, id];
-    
+      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11
+      WHERE id=$12 RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, id];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -135,9 +124,10 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. RUTA ESPECIAL PARA COMPARTIR ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR (Redirige al FRONTEND) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
+  // URL final donde el usuario debe aterrizar
   const URL_DESTINO_FRONT = `https://norteautomotores.up.railway.app/auto/${slug}`;
 
   try {
@@ -151,6 +141,8 @@ app.get("/share/auto/:slug", async (req, res) => {
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
+    // Respondemos con un HTML que tiene los metatags para WhatsApp
+    // pero un script de redirección para el humano
     res.send(`
       <!DOCTYPE html>
       <html lang="es">
@@ -161,10 +153,19 @@ app.get("/share/auto/:slug", async (req, res) => {
         <meta property="og:image" content="${imagen}">
         <meta property="og:type" content="website">
         <meta property="og:url" content="${URL_DESTINO_FRONT}">
-        <script>window.location.href = "${URL_DESTINO_FRONT}";</script>
+        
+        <script>
+          window.location.href = "${URL_DESTINO_FRONT}";
+        </script>
+        
         <meta http-equiv="refresh" content="0;url=${URL_DESTINO_FRONT}">
       </head>
-      <body>Redirigiendo...</body>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f4f4;">
+        <div style="padding: 20px; border: 1px solid #ddd; display: inline-block; background: white; border-radius: 8px;">
+          <h2>Redirigiendo a Norte Automotores...</h2>
+          <p>Si no eres redirigido automáticamente, <a href="${URL_DESTINO_FRONT}">haz clic aquí</a>.</p>
+        </div>
+      </body>
       </html>
     `);
   } catch (err) {
@@ -172,23 +173,12 @@ app.get("/share/auto/:slug", async (req, res) => {
   }
 });
 
-// --- 7. RUTA PARA LINKS DIRECTOS (Evita que se rompa el CSS) ---
-app.get("/auto/:slug", (req, res) => {
-  const indexPath = path.join(__dirname, "dist", "index.html");
-  let html = fs.readFileSync(indexPath, "utf8");
-  
-  // Agregamos el <base href="/"> dinámicamente para que el navegador
-  // sepa que debe buscar el CSS en la raíz y no en /auto/
-  html = html.replace("<head>", '<head><base href="/">');
-  res.send(html);
-});
-
-// --- 8. RUTA COMODÍN PARA REACT ---
+// --- 7. RUTA COMODÍN PARA REACT ---
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// --- 9. INICIO DEL SERVIDOR ---
+// --- 8. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);

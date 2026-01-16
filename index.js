@@ -3,7 +3,7 @@ const { Pool } = require("pg");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
-require('dotenv').config();
+require("dotenv").config();
 
 const app = express();
 
@@ -12,10 +12,13 @@ app.use(express.json());
 
 app.use((req, res, next) => {
   // Permite que cualquier origen conecte
-  res.header("Access-Control-Allow-Origin", "*"); 
+  res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
@@ -26,11 +29,11 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, "dist")));
 
 // --- 2. CONEXIÓN A POSTGRES ---
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
-  ssl: isProduction ? { rejectUnauthorized: false } : false
+  connectionString: process.env.DATABASE_URL,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 // --- 3. AUTO-MIGRACIÓN Y VERIFICACIÓN DE DB ---
@@ -87,12 +90,36 @@ app.get("/api/autos", async (req, res) => {
 
 app.post("/api/autos", async (req, res) => {
   try {
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const {
+      nombre,
+      precio,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      anio,
+      combustible,
+      descripcion,
+      kilometraje,
+      moneda,
+    } = req.body;
     const query = `
       INSERT INTO autos 
       (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda) 
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`;
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda];
+    const values = [
+      nombre,
+      parseInt(precio) || 0,
+      imagenes,
+      reservado || false,
+      motor,
+      transmision,
+      parseInt(anio) || 0,
+      combustible,
+      descripcion,
+      parseInt(kilometraje) || 0,
+      moneda,
+    ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -103,11 +130,36 @@ app.post("/api/autos", async (req, res) => {
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const {
+      nombre,
+      precio,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      anio,
+      combustible,
+      descripcion,
+      kilometraje,
+      moneda,
+    } = req.body;
     const query = `
       UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11
       WHERE id=$12 RETURNING *`;
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, id];
+    const values = [
+      nombre,
+      parseInt(precio) || 0,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      parseInt(anio) || 0,
+      combustible,
+      descripcion,
+      parseInt(kilometraje) || 0,
+      moneda,
+      id,
+    ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -143,13 +195,18 @@ app.get("/auto/:slug", async (req, res) => {
 
     // Datos para las etiquetas Meta
     const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
-    
+    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString(
+      "es-AR"
+    )}`;
+    const desc = `${precioTxt} - Año ${auto.anio} - ${Number(
+      auto.kilometraje
+    ).toLocaleString("es-AR")} km.`;
+
     // Optimizamos la imagen para WhatsApp (forzamos jpg)
-    const imagen = auto.imagenes && auto.imagenes[0] 
-      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
-      : "";
+    const imagen =
+      auto.imagenes && auto.imagenes[0]
+        ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/")
+        : "";
 
     const metaTags = `
       <title>${titulo}</title>
@@ -157,7 +214,7 @@ app.get("/auto/:slug", async (req, res) => {
       <meta property="og:title" content="${titulo}">
       <meta property="og:description" content="${desc}">
       <meta property="og:image" content="${imagen}">
-      <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
+      <meta property="og:url" content="https://norteautomotores.up.railway.app/auto/${slug}">
       <meta property="og:type" content="website">
       <meta name="twitter:card" content="summary_large_image">
     `;

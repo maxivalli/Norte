@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
@@ -154,31 +154,33 @@ app.get("/share/auto/:slug", async (req, res) => {
       : "";
 
     res.send(`
-      <!DOCTYPE html>
-      <html lang="es">
-      <head>
-        <meta charset="UTF-8">
-        <title>${titulo}</title>
-        
-        <meta property="og:title" content="${titulo}">
-        <meta property="og:description" content="${descripcion}">
-        <meta property="og:image" content="${imagen}">
-        <meta property="og:image:width" content="1200">
-        <meta property="og:image:height" content="630">
-        <meta property="og:type" content="website">
-        <meta property="og:url" content="${FRONTEND_BASE_URL}/auto/${slug}">
-        <meta property="og:site_name" content="Norte Automotores">
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>${titulo}</title>
 
-        <script>window.location.href = "${FRONTEND_BASE_URL}/#catalogo";</script>
-        <meta http-equiv="refresh" content="0;url=${FRONTEND_BASE_URL}/#catalogo">
-      </head>
-      <body style="background: #1a1a1a; color: white; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh;">
-        <div style="text-align: center;">
-          <h2>Redirigiendo a Norte Automotores...</h2>
-        </div>
-      </body>
-      </html>
-    `);
+  <meta property="og:title" content="${titulo}">
+  <meta property="og:description" content="${descripcion}">
+  <meta property="og:image" content="${imagen}">
+  <meta property="og:image:secure_url" content="${imagen}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
+  <meta property="og:site_name" content="Norte Automotores">
+
+  <!-- NO REDIRIGIR INMEDIATAMENTE -->
+  <meta http-equiv="refresh" content="5;url=${FRONTEND_BASE_URL}/#catalogo">
+</head>
+<body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding-top:50px;">
+  <h2>Norte Automotores</h2>
+  <p>Cargando vehículo...</p>
+  <p>Si no redirige automáticamente, <a style="color:#fff;" href="${FRONTEND_BASE_URL}/#catalogo">tocá acá</a></p>
+</body>
+</html>
+`);
+
   } catch (err) {
     res.redirect(FRONTEND_BASE_URL);
   }

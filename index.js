@@ -1,36 +1,39 @@
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
+const path = require("path");
+const fs = require("fs");
 require('dotenv').config();
 
 const app = express();
 
-// --- 1. CONFIGURACIÓN DE CORS MANUAL (Solución definitiva) ---
+// --- 1. CONFIGURACIÓN DE CORS Y MIDDLEWARES ---
+app.use(express.json());
+
 app.use((req, res, next) => {
-  // Permite que cualquier origen conecte (localhost, vercel, etc.)
+  // Permite que cualquier origen conecte
   res.header("Access-Control-Allow-Origin", "*"); 
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   
-  // Responder inmediatamente a la petición de prueba (Preflight)
   if (req.method === "OPTIONS") {
     return res.sendStatus(200);
   }
   next();
 });
 
-// --- 2. MIDDLEWARES ---
-app.use(express.json()); // Importante: debajo del CORS
+// Servir archivos estáticos de React (CSS, JS, etc.)
+app.use(express.static(path.join(__dirname, "dist")));
 
-// --- 3. CONEXIÓN A POSTGRES ---
+// --- 2. CONEXIÓN A POSTGRES ---
 const isProduction = process.env.NODE_ENV === 'production';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, // Para trabajar en producción poner DARABASE_URL
+  connectionString: process.env.DATABASE_URL, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
-// --- 4. AUTO-MIGRACIÓN (Crear tabla) ---
+// --- 3. AUTO-MIGRACIÓN Y VERIFICACIÓN DE DB ---
 const inicializarTabla = async () => {
   const queryText = `
     CREATE TABLE IF NOT EXISTS autos (
@@ -51,7 +54,7 @@ const inicializarTabla = async () => {
   `;
   try {
     await pool.query(queryText);
-    console.log("✅ Tabla 'autos' verificada");
+    console.log("✅ Tabla 'autos' verificada en la base de datos");
   } catch (err) {
     console.error("❌ Error en tabla:", err.message);
   }
@@ -59,19 +62,29 @@ const inicializarTabla = async () => {
 
 inicializarTabla();
 
-// --- 5. RUTAS API ---
+// --- 4. FUNCIONES AUXILIARES ---
+const crearSlug = (nombre) => {
+  if (!nombre) return "";
+  return nombre
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+};
 
-// GET - Obtener todos
+// --- 5. RUTAS DE LA API (Prioridad Alta) ---
+
 app.get("/api/autos", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM autos ORDER BY id DESC");
     res.json(result.rows);
   } catch (err) {
+    console.error("Error en GET /api/autos:", err.message);
     res.status(500).json({ error: "Error al obtener datos" });
   }
 });
 
-// POST - Crear
 app.post("/api/autos", async (req, res) => {
   try {
     const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
@@ -83,12 +96,10 @@ app.post("/api/autos", async (req, res) => {
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: "Error al guardar" });
   }
 });
 
-// PUT - Editar
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -104,7 +115,6 @@ app.put("/api/autos/:id", async (req, res) => {
   }
 });
 
-// DELETE - Borrar
 app.delete("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -115,8 +125,61 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. INICIO ---
+// --- 6. RUTA PARA PREVISUALIZACIÓN SEO (WhatsApp/Redes) ---
+app.get("/auto/:slug", async (req, res) => {
+  const { slug } = req.params;
+  const indexPath = path.join(__dirname, "dist", "index.html");
+
+  try {
+    // Buscamos el auto en la base de datos que coincida con el slug
+    const result = await pool.query("SELECT * FROM autos");
+    const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
+
+    if (!auto || !fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+
+    let html = fs.readFileSync(indexPath, "utf8");
+
+    // Datos para las etiquetas Meta
+    const titulo = `${auto.nombre} | Norte Automotores`;
+    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
+    const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
+    
+    // Optimizamos la imagen para WhatsApp (forzamos jpg)
+    const imagen = auto.imagenes && auto.imagenes[0] 
+      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
+      : "";
+
+    const metaTags = `
+      <title>${titulo}</title>
+      <meta name="description" content="${desc}">
+      <meta property="og:title" content="${titulo}">
+      <meta property="og:description" content="${desc}">
+      <meta property="og:image" content="${imagen}">
+      <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
+      <meta property="og:type" content="website">
+      <meta name="twitter:card" content="summary_large_image">
+    `;
+
+    // Reemplazamos el title original por todo el bloque de metas
+    html = html.replace(/<title>.*?<\/title>/, metaTags);
+
+    res.send(html);
+  } catch (err) {
+    console.error("Error in SEO middleware:", err);
+    res.sendFile(indexPath);
+  }
+});
+
+// --- 7. RUTA COMODÍN PARA REACT (Al final de todo) ---
+// Usamos RegExp para evitar errores de la librería path-to-regexp
+app.get(/.*/, (req, res) => {
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
+});
+
+// --- 8. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
-  console.log(`🚀 Servidor en puerto ${PORT}`);
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });

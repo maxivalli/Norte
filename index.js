@@ -9,24 +9,13 @@ const app = express();
 
 // --- 1. CONFIGURACIÓN DE CORS Y MIDDLEWARES ---
 app.use(express.json());
-
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); 
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(200);
-  }
-  next();
-});
+app.use(cors()); // Simplificado para permitir todo
 
 // Servir archivos estáticos de React
 app.use(express.static(path.join(__dirname, "dist")));
 
 // --- 2. CONEXIÓN A POSTGRES ---
 const isProduction = process.env.NODE_ENV === 'production';
-
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
@@ -34,41 +23,42 @@ const pool = new Pool({
 
 // --- 3. AUTO-MIGRACIÓN Y VERIFICACIÓN DE DB ---
 const inicializarTabla = async () => {
-  const queryText = `
-    CREATE TABLE IF NOT EXISTS autos (
-      id SERIAL PRIMARY KEY,
-      nombre VARCHAR(255) NOT NULL,
-      precio NUMERIC DEFAULT 0,
-      moneda VARCHAR(10) DEFAULT '$',
-      imagenes TEXT[], 
-      motor VARCHAR(100),
-      transmision VARCHAR(50),
-      anio INTEGER,
-      combustible VARCHAR(50),
-      kilometraje INTEGER,
-      descripcion TEXT,
-      reservado BOOLEAN DEFAULT false,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
-  `;
   try {
-    await pool.query(queryText);
-    console.log("✅ Tabla 'autos' verificada en la base de datos");
+    // Creamos la tabla base
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS autos (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(255) NOT NULL,
+        precio NUMERIC DEFAULT 0,
+        moneda VARCHAR(10) DEFAULT '$',
+        imagenes TEXT[], 
+        motor VARCHAR(100),
+        transmision VARCHAR(50),
+        anio INTEGER,
+        combustible VARCHAR(50),
+        kilometraje INTEGER,
+        descripcion TEXT,
+        reservado BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Agregamos las columnas nuevas si no existen
+    await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS visitas INTEGER DEFAULT 0;`);
+    await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS color VARCHAR(50);`);
+
+    console.log("✅ Base de datos lista y columnas verificadas (visitas, color)");
   } catch (err) {
-    console.error("❌ Error en tabla:", err.message);
+    console.error("❌ Error en inicialización de DB:", err.message);
   }
 };
-
-await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS visitas INTEGER DEFAULT 0;`);
 
 inicializarTabla();
 
 // --- 4. FUNCIONES AUXILIARES ---
 const crearSlug = (nombre) => {
   if (!nombre) return "";
-  return nombre
-    .toLowerCase()
-    .trim()
+  return nombre.toLowerCase().trim()
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -81,19 +71,32 @@ app.get("/api/autos", async (req, res) => {
     const result = await pool.query("SELECT * FROM autos ORDER BY id DESC");
     res.json(result.rows);
   } catch (err) {
-    console.error("Error en GET /api/autos:", err.message);
     res.status(500).json({ error: "Error al obtener datos" });
+  }
+});
+
+// RUTA PARA INCREMENTAR VISITAS (Debe ir ANTES de las rutas de React)
+app.patch("/api/autos/:id/visita", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      `UPDATE autos SET visitas = visitas + 1 WHERE id = $1 RETURNING visitas`, 
+      [id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Error al actualizar visitas" });
   }
 });
 
 app.post("/api/autos", async (req, res) => {
   try {
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
     const query = `
       INSERT INTO autos 
-      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`;
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda];
+      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0) RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, color];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -104,11 +107,11 @@ app.post("/api/autos", async (req, res) => {
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
     const query = `
-      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11
-      WHERE id=$12 RETURNING *`;
-    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, id];
+      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12
+      WHERE id=$13 RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, color, id];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -126,10 +129,9 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. RUTA ESPECIAL PARA COMPARTIR (Redirige al FRONTEND) ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
-  // URL final donde el usuario debe aterrizar
   const URL_DESTINO_FRONT = `https://norteautomotores.up.railway.app/auto/${slug}`;
 
   try {
@@ -143,8 +145,6 @@ app.get("/share/auto/:slug", async (req, res) => {
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
-    // Respondemos con un HTML que tiene los metatags para WhatsApp
-    // pero un script de redirección para el humano
     res.send(`
       <!DOCTYPE html>
       <html lang="es">
@@ -155,18 +155,11 @@ app.get("/share/auto/:slug", async (req, res) => {
         <meta property="og:image" content="${imagen}">
         <meta property="og:type" content="website">
         <meta property="og:url" content="${URL_DESTINO_FRONT}">
-        
-        <script>
-          window.location.href = "${URL_DESTINO_FRONT}";
-        </script>
-        
+        <script>window.location.href = "${URL_DESTINO_FRONT}";</script>
         <meta http-equiv="refresh" content="0;url=${URL_DESTINO_FRONT}">
       </head>
       <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f4f4;">
-        <div style="padding: 20px; border: 1px solid #ddd; display: inline-block; background: white; border-radius: 8px;">
-          <h2>Redirigiendo a Norte Automotores...</h2>
-          <p>Si no eres redirigido automáticamente, <a href="${URL_DESTINO_FRONT}">haz clic aquí</a>.</p>
-        </div>
+        <div><h2>Redirigiendo a Norte Automotores...</h2></div>
       </body>
       </html>
     `);
@@ -176,28 +169,12 @@ app.get("/share/auto/:slug", async (req, res) => {
 });
 
 // --- 7. RUTA COMODÍN PARA REACT ---
+// Esta siempre debe ser la última de los métodos GET
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// --- 8. RUTA PARA INCREMENTAR VISITAS ---
-app.patch("/api/autos/:id/visita", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const query = `UPDATE autos SET visitas = visitas + 1 WHERE id = $1 RETURNING visitas`;
-    const result = await pool.query(query, [id]);
-    
-    if (result.rows.length > 0) {
-      res.json({ visitas: result.rows[0].visitas });
-    } else {
-      res.status(404).json({ error: "Auto no encontrado" });
-    }
-  } catch (err) {
-    res.status(500).json({ error: "Error al actualizar visitas" });
-  }
-});
-
-// --- 9. INICIO DEL SERVIDOR ---
+// --- 8. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);

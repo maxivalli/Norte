@@ -1,117 +1,122 @@
 const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
 require('dotenv').config();
 
 const app = express();
 
-// --- 1. CONFIGURACIÓN DE BASE DE DATOS ---
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
-  ssl: { rejectUnauthorized: false }
-});
-
-pool.query('SELECT NOW()', (err) => {
-  if (err) console.error("❌ ERROR DB:", err.message);
-  else console.log("✅ Conexión a PostgreSQL establecida");
+// --- 1. CONFIGURACIÓN DE CORS MANUAL (Solución definitiva) ---
+app.use((req, res, next) => {
+  // Permite que cualquier origen conecte (localhost, vercel, etc.)
+  res.header("Access-Control-Allow-Origin", "*"); 
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  
+  // Responder inmediatamente a la petición de prueba (Preflight)
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(200);
+  }
+  next();
 });
 
 // --- 2. MIDDLEWARES ---
-app.use(cors());
-app.use(express.json());
+app.use(express.json()); // Importante: debajo del CORS
 
-// --- 3. RUTA SEO (ESTA ES LA PRIORIDAD MÁXIMA) ---
-// La ponemos antes que cualquier otra cosa para interceptar a WhatsApp
-app.get("/auto/:slug", async (req, res) => {
-  console.log("🔍 [SEO] Petición detectada para slug:", req.params.slug);
-  
-  const { slug } = req.params;
-  const slugLimpio = slug.split(" ")[0].split("%20")[0].toLowerCase();
-  
-  // Ruta absoluta al index.html
-  const indexPath = path.resolve(__dirname, "dist", "index.html");
+// --- 3. CONEXIÓN A POSTGRES ---
+const isProduction = process.env.NODE_ENV === 'production';
 
-  try {
-    const result = await pool.query("SELECT * FROM autos");
-    const auto = result.rows.find(a => {
-        const n = a.nombre.toLowerCase().trim()
-            .replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
-        return n === slugLimpio;
-    });
-
-    if (!auto) {
-      console.log("⚠️ [SEO] Auto no encontrado en DB:", slugLimpio);
-      return res.sendFile(indexPath);
-    }
-
-    console.log("⭐ [SEO] Auto encontrado:", auto.nombre);
-
-    if (!fs.existsSync(indexPath)) {
-      console.error("❌ [SEO] No se encontró el archivo index.html en /dist");
-      return res.status(500).send("Error interno: dist/index.html no existe");
-    }
-
-    let html = fs.readFileSync(indexPath, "utf8");
-
-    // Datos del auto
-    const titulo = `${auto.nombre} | Norte Automotores`;
-    const imagen = auto.imagenes?.[0]?.replace("/upload/", "/upload/f_jpg,q_auto,w_800/") || "";
-    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
-
-    // Metatags para redes sociales
-    const metaTags = `
-<title>${titulo}</title>
-<meta name="description" content="${desc}">
-<meta property="og:title" content="${titulo}">
-<meta property="og:description" content="${desc}">
-<meta property="og:image" content="${imagen}">
-<meta property="og:image:secure_url" content="${imagen}">
-<meta property="og:image:type" content="image/jpeg">
-<meta property="og:image:width" content="800">
-<meta property="og:image:height" content="600">
-<meta property="og:url" content="https://norteautomotores.up.railway.app/auto/${slugLimpio}">
-<meta property="og:type" content="website">
-<meta name="twitter:card" content="summary_large_image">`;
-
-    // Inyectamos justo después del <head>
-    const nuevoHtml = html.replace("<head>", `<head>${metaTags}`);
-    
-    return res.send(nuevoHtml);
-
-  } catch (err) {
-    console.error("❌ [SEO] Error crítico:", err);
-    return res.sendFile(indexPath);
-  }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL, // Para trabajar en producción poner DARABASE_URL
+  ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
-// --- 4. RUTAS DE LA API ---
+// --- 4. AUTO-MIGRACIÓN (Crear tabla) ---
+const inicializarTabla = async () => {
+  const queryText = `
+    CREATE TABLE IF NOT EXISTS autos (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(255) NOT NULL,
+      precio NUMERIC DEFAULT 0,
+      moneda VARCHAR(10) DEFAULT 'U$S',
+      imagenes TEXT[], 
+      motor VARCHAR(100),
+      transmision VARCHAR(50),
+      anio INTEGER,
+      combustible VARCHAR(50),
+      kilometraje INTEGER,
+      descripcion TEXT,
+      reservado BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  try {
+    await pool.query(queryText);
+    console.log("✅ Tabla 'autos' verificada");
+  } catch (err) {
+    console.error("❌ Error en tabla:", err.message);
+  }
+};
+
+inicializarTabla();
+
+// --- 5. RUTAS API ---
+
+// GET - Obtener todos
 app.get("/api/autos", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM autos ORDER BY id DESC");
-    return res.json(result.rows);
+    res.json(result.rows);
   } catch (err) {
-    return res.status(500).json({ error: "Error DB" });
+    res.status(500).json({ error: "Error al obtener datos" });
   }
 });
 
-// --- 5. ARCHIVOS ESTÁTICOS ---
-app.use(express.static(path.resolve(__dirname, "dist")));
-
-// --- 6. CATCH-ALL (PARA TODAS LAS DEMÁS RUTAS) ---
-app.get(/.*/, (req, res) => {
-  const indexPath = path.resolve(__dirname, "dist", "index.html");
-  if (fs.existsSync(indexPath)) {
-    res.sendFile(indexPath);
-  } else {
-    res.status(404).send("Front-end no disponible. Verifica el build.");
+// POST - Crear
+app.post("/api/autos", async (req, res) => {
+  try {
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const query = `
+      INSERT INTO autos 
+      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado || false, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda];
+    const result = await pool.query(query, values);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Error al guardar" });
   }
 });
 
-// --- 7. ARRANQUE ---
-const PORT = process.env.PORT || 8080;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Servidor activo en puerto ${PORT}`);
+// PUT - Editar
+app.put("/api/autos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
+    const query = `
+      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11
+      WHERE id=$12 RETURNING *`;
+    const values = [nombre, parseInt(precio) || 0, imagenes, reservado, motor, transmision, parseInt(anio) || 0, combustible, descripcion, parseInt(kilometraje) || 0, moneda, id];
+    const result = await pool.query(query, values);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Error al editar" });
+  }
+});
+
+// DELETE - Borrar
+app.delete("/api/autos/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("DELETE FROM autos WHERE id = $1", [id]);
+    res.json({ message: "Eliminado" });
+  } catch (err) {
+    res.status(500).json({ error: "Error al eliminar" });
+  }
+});
+
+// --- 6. INICIO ---
+const PORT = process.env.PORT || 5001;
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor en puerto ${PORT}`);
 });

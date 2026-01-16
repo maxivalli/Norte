@@ -39,7 +39,7 @@ const inicializarTabla = async () => {
         kilometraje INTEGER,
         descripcion TEXT,
         reservado BOOLEAN DEFAULT false,
-        visitas INTEGER DEFAULT 0
+        visitas INTEGER DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);

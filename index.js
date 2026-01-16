@@ -124,9 +124,11 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. RUTA ESPECIAL PARA COMPARTIR (La "Página Fantasma" para WhatsApp) ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR (WhatsApp) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
+  // Dominio donde el usuario navega (Frontend)
+  const DOMINIO_PUBLICO = "https://norteautomotores.up.railway.app";
 
   try {
     const result = await pool.query("SELECT * FROM autos");
@@ -140,7 +142,6 @@ app.get("/share/auto/:slug", async (req, res) => {
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
     const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
     
-    // Imagen optimizada para WhatsApp
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
@@ -156,19 +157,17 @@ app.get("/share/auto/:slug", async (req, res) => {
         <meta property="og:title" content="${titulo}">
         <meta property="og:description" content="${desc}">
         <meta property="og:image" content="${imagen}">
-        <meta property="og:image:width" content="800">
-        <meta property="og:image:height" content="450">
-        <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
+        <meta property="og:url" content="${DOMINIO_PUBLICO}/auto/${slug}">
         <meta property="og:type" content="website">
         <meta name="twitter:card" content="summary_large_image">
         <script>
-          window.location.href = "/auto/${slug}";
+          // Redirigimos al dominio del frontend
+          window.location.href = "${DOMINIO_PUBLICO}/auto/${slug}";
         </script>
       </head>
       <body style="background-color: #f4f4f4; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
         <div style="text-align: center;">
           <h2>Cargando detalles de ${auto.nombre}...</h2>
-          <p>Si no eres redirigido, <a href="/auto/${slug}">haz clic aquí</a></p>
         </div>
       </body>
       </html>
@@ -183,11 +182,13 @@ app.get("/share/auto/:slug", async (req, res) => {
 app.get("/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const indexPath = path.join(__dirname, "dist", "index.html");
+  const DOMINIO_PUBLICO = "https://norteautomotores.up.railway.app";
 
   try {
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
+    // Si no hay auto o no existe el index, enviamos el archivo limpio
     if (!auto || !fs.existsSync(indexPath)) {
       return res.sendFile(indexPath);
     }
@@ -201,18 +202,23 @@ app.get("/auto/:slug", async (req, res) => {
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
+    // Insertamos <base href="/"> para que los assets carguen desde la raíz
+    // y los meta tags de forma segura al inicio del <head>
     const metaTags = `
+      <base href="/">
       <title>${titulo}</title>
       <meta name="description" content="${desc}">
       <meta property="og:title" content="${titulo}">
       <meta property="og:description" content="${desc}">
       <meta property="og:image" content="${imagen}">
-      <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
+      <meta property="og:url" content="${DOMINIO_PUBLICO}/auto/${slug}">
       <meta property="og:type" content="website">
-      <meta name="twitter:card" content="summary_large_image">
     `;
 
-    html = html.replace(/<title>.*?<\/title>/, metaTags);
+    // Reemplazamos la etiqueta <head> por <head> + nuestros tags 
+    // Esto es mucho más seguro que usar regex sobre el title
+    html = html.replace("<head>", `<head>${metaTags}`);
+
     res.send(html);
   } catch (err) {
     res.sendFile(indexPath);

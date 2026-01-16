@@ -40,6 +40,7 @@ const inicializarTabla = async () => {
       nombre VARCHAR(255) NOT NULL,
       precio NUMERIC DEFAULT 0,
       moneda VARCHAR(10) DEFAULT 'U$S',
+      color VARCHAR(50),
       imagenes TEXT[], 
       motor VARCHAR(100),
       transmision VARCHAR(50),

@@ -140,7 +140,6 @@ app.get("/share/auto/:slug", async (req, res) => {
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
     const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
     
-    // Imagen optimizada para WhatsApp
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
@@ -201,7 +200,9 @@ app.get("/auto/:slug", async (req, res) => {
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
 
+    // El truco está en <base href="/"> para que no se pierdan los archivos CSS/JS
     const metaTags = `
+      <base href="/">
       <title>${titulo}</title>
       <meta name="description" content="${desc}">
       <meta property="og:title" content="${titulo}">

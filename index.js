@@ -9,7 +9,7 @@ const app = express();
 
 // --- 1. CONFIGURACIÓN DE BASE DE DATOS ---
 const pool = new Pool({
-  connectionString: process.env.DATABASE_PUBLIC, 
+  connectionString: process.env.DATABASE_URL, 
   ssl: { rejectUnauthorized: false }
 });
 

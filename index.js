@@ -158,7 +158,7 @@ app.get("/share/auto/:slug", async (req, res) => {
         <meta property="og:image" content="${imagen}">
         <meta property="og:image:width" content="800">
         <meta property="og:image:height" content="450">
-        <meta property="og:url" content="https://norteautomotores.up.railway.app/auto/${slug}">
+        <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
         <meta property="og:type" content="website">
         <meta name="twitter:card" content="summary_large_image">
         <script>
@@ -207,7 +207,7 @@ app.get("/auto/:slug", async (req, res) => {
       <meta property="og:title" content="${titulo}">
       <meta property="og:description" content="${desc}">
       <meta property="og:image" content="${imagen}">
-      <meta property="og:url" content="https://norteautomotores.up.railway.app/auto/${slug}">
+      <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
       <meta property="og:type" content="website">
       <meta name="twitter:card" content="summary_large_image">
     `;

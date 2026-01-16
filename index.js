@@ -22,7 +22,6 @@ app.use((req, res, next) => {
 });
 
 // Servir archivos estáticos de React
-// Agregamos una configuración para que siempre busque desde la raíz
 app.use(express.static(path.join(__dirname, "dist")));
 
 // --- 2. CONEXIÓN A POSTGRES ---
@@ -128,16 +127,23 @@ app.delete("/api/autos/:id", async (req, res) => {
 // --- 6. RUTA ESPECIAL PARA COMPARTIR (La "Página Fantasma" para WhatsApp) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
+
   try {
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
-    if (!auto) return res.redirect("/");
+    if (!auto) {
+      return res.redirect("/");
+    }
 
     const titulo = `${auto.nombre} | Norte Automotores`;
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
-    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles.`;
-    const imagen = auto.imagenes && auto.imagenes[0] ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") : "";
+    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
+    
+    // Imagen optimizada para WhatsApp
+    const imagen = auto.imagenes && auto.imagenes[0] 
+      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
+      : "";
 
     res.send(`
       <!DOCTYPE html>
@@ -146,17 +152,29 @@ app.get("/share/auto/:slug", async (req, res) => {
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>${titulo}</title>
+        <meta name="description" content="${desc}">
         <meta property="og:title" content="${titulo}">
         <meta property="og:description" content="${desc}">
         <meta property="og:image" content="${imagen}">
+        <meta property="og:image:width" content="800">
+        <meta property="og:image:height" content="450">
         <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
         <meta property="og:type" content="website">
-        <script>window.location.href = "/auto/${slug}";</script>
+        <meta name="twitter:card" content="summary_large_image">
+        <script>
+          window.location.href = "/auto/${slug}";
+        </script>
       </head>
-      <body>Cargando...</body>
+      <body style="background-color: #f4f4f4; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h2>Cargando detalles de ${auto.nombre}...</h2>
+          <p>Si no eres redirigido, <a href="/auto/${slug}">haz clic aquí</a></p>
+        </div>
+      </body>
       </html>
     `);
   } catch (err) {
+    console.error("Error en ruta de compartir:", err);
     res.redirect("/");
   }
 });
@@ -178,7 +196,10 @@ app.get("/auto/:slug", async (req, res) => {
     const titulo = `${auto.nombre} | Norte Automotores`;
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
     const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
-    const imagen = auto.imagenes && auto.imagenes[0] ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") : "";
+    
+    const imagen = auto.imagenes && auto.imagenes[0] 
+      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
+      : "";
 
     const metaTags = `
       <title>${titulo}</title>
@@ -188,6 +209,7 @@ app.get("/auto/:slug", async (req, res) => {
       <meta property="og:image" content="${imagen}">
       <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
       <meta property="og:type" content="website">
+      <meta name="twitter:card" content="summary_large_image">
     `;
 
     html = html.replace(/<title>.*?<\/title>/, metaTags);
@@ -198,7 +220,7 @@ app.get("/auto/:slug", async (req, res) => {
 });
 
 // --- 8. RUTA COMODÍN PARA REACT ---
-app.get("*", (req, res) => {
+app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 

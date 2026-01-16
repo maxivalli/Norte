@@ -39,13 +39,10 @@ const inicializarTabla = async () => {
         kilometraje INTEGER,
         descripcion TEXT,
         reservado BOOLEAN DEFAULT false,
+        visitas INTEGER DEFAULT 0
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
-    // Agregamos las columnas nuevas si no existen
-    await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS visitas INTEGER DEFAULT 0;`);
-    await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS color VARCHAR(50);`);
 
     console.log("✅ Base de datos lista y columnas verificadas (visitas, color)");
   } catch (err) {

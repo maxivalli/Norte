@@ -11,7 +11,6 @@ const app = express();
 app.use(express.json());
 
 app.use((req, res, next) => {
-  // Permite que cualquier origen conecte
   res.header("Access-Control-Allow-Origin", "*"); 
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
@@ -22,14 +21,14 @@ app.use((req, res, next) => {
   next();
 });
 
-// Servir archivos estáticos de React (CSS, JS, etc.)
+// Servir archivos estáticos de React
 app.use(express.static(path.join(__dirname, "dist")));
 
 // --- 2. CONEXIÓN A POSTGRES ---
 const isProduction = process.env.NODE_ENV === 'production';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
@@ -73,7 +72,7 @@ const crearSlug = (nombre) => {
     .replace(/^-+|-+$/g, "");
 };
 
-// --- 5. RUTAS DE LA API (Prioridad Alta) ---
+// --- 5. RUTAS DE LA API ---
 
 app.get("/api/autos", async (req, res) => {
   try {
@@ -125,13 +124,67 @@ app.delete("/api/autos/:id", async (req, res) => {
   }
 });
 
-// --- 6. RUTA PARA PREVISUALIZACIÓN SEO (WhatsApp/Redes) ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR (La "Página Fantasma" para WhatsApp) ---
+app.get("/share/auto/:slug", async (req, res) => {
+  const { slug } = req.params;
+
+  try {
+    const result = await pool.query("SELECT * FROM autos");
+    const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
+
+    if (!auto) {
+      return res.redirect("/");
+    }
+
+    const titulo = `${auto.nombre} | Norte Automotores`;
+    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
+    const desc = `Precio: ${precioTxt} - Año: ${auto.anio}. Mirá más detalles en nuestro catálogo.`;
+    
+    // Imagen optimizada para WhatsApp
+    const imagen = auto.imagenes && auto.imagenes[0] 
+      ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
+      : "";
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="es">
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>${titulo}</title>
+        <meta name="description" content="${desc}">
+        <meta property="og:title" content="${titulo}">
+        <meta property="og:description" content="${desc}">
+        <meta property="og:image" content="${imagen}">
+        <meta property="og:image:width" content="800">
+        <meta property="og:image:height" content="450">
+        <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}">
+        <meta property="og:type" content="website">
+        <meta name="twitter:card" content="summary_large_image">
+        <script>
+          window.location.href = "/auto/${slug}";
+        </script>
+      </head>
+      <body style="background-color: #f4f4f4; display: flex; align-items: center; justify-content: center; height: 100vh; font-family: sans-serif;">
+        <div style="text-align: center;">
+          <h2>Cargando detalles de ${auto.nombre}...</h2>
+          <p>Si no eres redirigido, <a href="/auto/${slug}">haz clic aquí</a></p>
+        </div>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("Error en ruta de compartir:", err);
+    res.redirect("/");
+  }
+});
+
+// --- 7. RUTA PARA PREVISUALIZACIÓN SEO (Carga el index.html de React) ---
 app.get("/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const indexPath = path.join(__dirname, "dist", "index.html");
 
   try {
-    // Buscamos el auto en la base de datos que coincida con el slug
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
@@ -140,13 +193,10 @@ app.get("/auto/:slug", async (req, res) => {
     }
 
     let html = fs.readFileSync(indexPath, "utf8");
-
-    // Datos para las etiquetas Meta
     const titulo = `${auto.nombre} | Norte Automotores`;
     const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
     const desc = `${precioTxt} - Año ${auto.anio} - ${Number(auto.kilometraje).toLocaleString("es-AR")} km.`;
     
-    // Optimizamos la imagen para WhatsApp (forzamos jpg)
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("/upload/", "/upload/f_jpg,q_auto,w_800/") 
       : "";
@@ -162,23 +212,19 @@ app.get("/auto/:slug", async (req, res) => {
       <meta name="twitter:card" content="summary_large_image">
     `;
 
-    // Reemplazamos el title original por todo el bloque de metas
     html = html.replace(/<title>.*?<\/title>/, metaTags);
-
     res.send(html);
   } catch (err) {
-    console.error("Error in SEO middleware:", err);
     res.sendFile(indexPath);
   }
 });
 
-// --- 7. RUTA COMODÍN PARA REACT (Al final de todo) ---
-// Usamos RegExp para evitar errores de la librería path-to-regexp
+// --- 8. RUTA COMODÍN PARA REACT ---
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 
-// --- 8. INICIO DEL SERVIDOR ---
+// --- 9. INICIO DEL SERVIDOR ---
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Servidor corriendo en puerto ${PORT}`);

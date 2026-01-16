@@ -9,22 +9,21 @@ const app = express();
 
 // --- 1. CONFIGURACIÓN DE BASE DE DATOS ---
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: { rejectUnauthorized: false }
 });
 
-// Test de conexión para logs
+// Test de conexión para ver en logs de Railway
 pool.query('SELECT NOW()', (err) => {
-  if (err) console.error("❌ ERROR DB:", err.message);
-  else console.log("✅ Conexión a PostgreSQL establecida");
+  if (err) console.error("❌ ERROR DE CONEXIÓN DB:", err.message);
+  else console.log("✅ Conexión a PostgreSQL establecida correctamente");
 });
 
 // --- 2. MIDDLEWARES ---
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
 // --- 3. RUTAS DE LA API (PRIORIDAD ALTA) ---
-// Estas rutas deben responder JSON, no el HTML de React
 app.get("/api/autos", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM autos ORDER BY id DESC");
@@ -50,21 +49,21 @@ app.post("/api/autos", async (req, res) => {
   }
 });
 
-// --- 4. RUTA SEO PARA WHATSAPP (ANTES QUE STATIC) ---
+// --- 4. RUTA SEO (PARA WHATSAPP) ---
 app.get("/auto/:slug", async (req, res) => {
-  console.log("🔍 Petición SEO para:", req.params.slug);
+  console.log("🔍 Petición SEO recibida para slug:", req.params.slug);
   
   let { slug } = req.params;
   slug = slug.split(" ")[0].split("%20")[0].toLowerCase();
-  
+
   const indexPath = path.join(__dirname, "dist", "index.html");
 
   try {
     const result = await pool.query("SELECT * FROM autos");
-    const auto = result.rows.find(a => {
-        const n = a.nombre.toLowerCase().trim()
+    const auto = result.rows.find((a) => {
+        const nombreLimpio = a.nombre.toLowerCase().trim()
             .replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
-        return n === slug;
+        return nombreLimpio === slug;
     });
 
     if (!auto || !fs.existsSync(indexPath)) {
@@ -83,10 +82,6 @@ app.get("/auto/:slug", async (req, res) => {
       <meta property="og:title" content="${titulo}">
       <meta property="og:description" content="${desc}">
       <meta property="og:image" content="${imagen}">
-      <meta property="og:image:secure_url" content="${imagen}">
-      <meta property="og:image:type" content="image/jpeg">
-      <meta property="og:image:width" content="800">
-      <meta property="og:image:height" content="600">
       <meta property="og:url" content="https://norteautomotores.up.railway.app/auto/${slug}">
       <meta property="og:type" content="website">
       <meta name="twitter:card" content="summary_large_image">
@@ -95,7 +90,7 @@ app.get("/auto/:slug", async (req, res) => {
     return res.send(html.replace("</head>", `${metaTags}</head>`));
 
   } catch (err) {
-    console.error("Error SEO:", err);
+    console.error("❌ Error SEO:", err);
     return res.sendFile(indexPath);
   }
 });
@@ -103,22 +98,21 @@ app.get("/auto/:slug", async (req, res) => {
 // --- 5. ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, "dist")));
 
-// --- 6. MANEJO DE RUTAS NO ENCONTRADAS (FALLBACK) ---
-app.get("*", (req, res) => {
-  // Si alguien pide algo en /api que no existe, devolvemos 404 real, no el index.html
+// --- 6. CATCH-ALL CON EXPRESIÓN REGULAR (LA QUE FUNCIONA) ---
+// Usamos /.*/ para atrapar todo sin que path-to-regexp se queje
+app.get(/.*/, (req, res) => {
   if (req.url.startsWith("/api")) {
-    return res.status(404).json({ error: "Ruta de API no encontrada" });
+    return res.status(404).json({ error: "API not found" });
   }
-  // Para todo lo demás, servimos React
   const indexPath = path.join(__dirname, "dist", "index.html");
   if (fs.existsSync(indexPath)) {
     res.sendFile(indexPath);
   } else {
-    res.status(404).send("Error: El frontend no está compilado (falta carpeta /dist)");
+    res.status(404).send("Error: No se encontró la carpeta dist. Ejecutá npm run build.");
   }
 });
 
-// --- 7. ARRANQUE DEL SERVIDOR ---
+// --- 7. ARRANQUE ---
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor activo en puerto ${PORT}`);

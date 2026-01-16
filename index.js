@@ -9,26 +9,47 @@ const app = express();
 
 // --- 1. CONFIGURACIÓN DE MIDDLEWARES ---
 app.use(express.json());
+app.use(cors()); // Simplificamos el CORS
 
-app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*"); 
-  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
-  if (req.method === "OPTIONS") return res.sendStatus(200);
-  next();
-});
-
-// ARCHIVOS ESTÁTICOS: Importante que esté arriba
+// Servir archivos estáticos de la carpeta dist (React)
 app.use(express.static(path.join(__dirname, "dist")));
 
 // --- 2. CONEXIÓN A POSTGRES ---
 const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
-// --- 3. FUNCIONES AUXILIARES ---
+// --- 3. INICIALIZACIÓN DE TABLA (Evita el crash si no existe) ---
+const inicializarTabla = async () => {
+  const queryText = `
+    CREATE TABLE IF NOT EXISTS autos (
+      id SERIAL PRIMARY KEY,
+      nombre VARCHAR(255) NOT NULL,
+      precio NUMERIC DEFAULT 0,
+      moneda VARCHAR(10) DEFAULT 'U$S',
+      imagenes TEXT[], 
+      motor VARCHAR(100),
+      transmision VARCHAR(50),
+      anio INTEGER,
+      combustible VARCHAR(50),
+      kilometraje INTEGER,
+      descripcion TEXT,
+      reservado BOOLEAN DEFAULT false,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `;
+  try {
+    await pool.query(queryText);
+    console.log("✅ Tabla 'autos' verificada");
+  } catch (err) {
+    console.error("❌ Error inicializando tabla:", err.message);
+  }
+};
+inicializarTabla();
+
+// --- 4. FUNCIONES AUXILIARES ---
 const crearSlug = (nombre) => {
   if (!nombre) return "";
   return nombre.toLowerCase().trim()
@@ -37,7 +58,7 @@ const crearSlug = (nombre) => {
     .replace(/^-+|-+$/g, "");
 };
 
-// --- 4. RUTAS DE LA API ---
+// --- 5. RUTAS DE LA API (Deben ir antes de las rutas de React) ---
 app.get("/api/autos", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM autos ORDER BY id DESC");
@@ -47,7 +68,6 @@ app.get("/api/autos", async (req, res) => {
   }
 });
 
-// ... (Tus rutas POST, PUT, DELETE de la API se mantienen igual que antes)
 app.post("/api/autos", async (req, res) => {
   try {
     const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda } = req.body;
@@ -77,42 +97,60 @@ app.delete("/api/autos/:id", async (req, res) => {
   } catch (err) { res.status(500).json({ error: "Error al eliminar" }); }
 });
 
-
-// --- 5. RUTA ESPECIAL PARA COMPARTIR (WhatsApp) ---
+// --- 6. RUTA ESPECIAL PARA COMPARTIR (Para WhatsApp) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   try {
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
+    
     if (!auto) return res.redirect("/");
 
     const titulo = `${auto.nombre} | Norte Automotores`;
     const imagen = auto.imagenes?.[0]?.replace("/upload/", "/upload/f_jpg,q_auto,w_800/") || "";
+    const precioTxt = `${auto.moneda} ${Number(auto.precio).toLocaleString("es-AR")}`;
 
     res.send(`
       <!DOCTYPE html>
       <html>
       <head>
+        <meta charset="UTF-8">
+        <title>${titulo}</title>
         <meta property="og:title" content="${titulo}" />
+        <meta property="og:description" content="Precio: ${precioTxt} - Miralo acá." />
         <meta property="og:image" content="${imagen}" />
+        <meta property="og:url" content="https://norte-production.up.railway.app/auto/${slug}" />
         <meta property="og:type" content="website" />
+        <meta name="twitter:card" content="summary_large_image">
         <script>window.location.href = "/auto/${slug}";</script>
       </head>
-      <body>Redireccionando a ${auto.nombre}...</body>
+      <body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+        <p>Redireccionando a ${auto.nombre}...</p>
+      </body>
       </html>
     `);
-  } catch (err) { res.redirect("/"); }
+  } catch (err) {
+    console.error("Error en share:", err);
+    res.redirect("/");
+  }
 });
 
-// --- 6. MANEJO DE RUTAS DE REACT (IMPORTANTE) ---
-// Esta parte asegura que cualquier ruta que no sea de la API o Share cargue el index.html
-const cargarApp = (req, res) => {
+// --- 7. RUTAS PARA CARGAR REACT ---
+// Definimos la carga del index.html
+const enviarIndex = (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 };
 
-app.get("/auto/:slug", cargarApp); // Ruta específica para autos compartidos
-app.get("*", cargarApp);         // Cualquier otra ruta (Home, Admin, etc.)
+// Rutas específicas que React debe manejar
+app.get("/auto/:slug", enviarIndex);
+app.get("/login", enviarIndex);
+app.get("/admin", enviarIndex);
 
-// --- 7. INICIO ---
+// Ruta comodín para todo lo demás
+app.get("*", enviarIndex);
+
+// --- 8. INICIO ---
 const PORT = process.env.PORT || 5001;
-app.listen(PORT, () => console.log(`🚀 Servidor listo en puerto ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
+});

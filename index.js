@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
@@ -45,13 +45,13 @@ const inicializarTabla = async () => {
     await pool.query(`
       DO $$ 
       BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='autos' AND column_name='color') THEN
-          ALTER TABLE autos ADD COLUMN color VARCHAR(100);
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='autos' AND column_name='etiqueta') THEN
+          ALTER TABLE autos ADD COLUMN etiqueta VARCHAR(50);
         END IF;
       END $$;
     `);
 
-    console.log("✅ Base de datos lista y color verificado");
+    console.log("✅ Base de datos lista");
   } catch (err) {
     console.error("❌ Error en inicialización de DB:", err.message);
   }
@@ -94,12 +94,27 @@ app.patch("/api/autos/:id/visita", async (req, res) => {
 
 app.post("/api/autos", async (req, res) => {
   try {
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, etiqueta } = req.body;
     const query = `
       INSERT INTO autos 
-      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0) RETURNING *`;
-    const values = [nombre, Math.round(Number(precio)) || 0, imagenes, reservado || false, motor, transmision, Math.round(Number(anio)) || 0, combustible, descripcion, Math.round(Number(kilometraje)) || 0, moneda, color];
+      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas, etiqueta) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, $13) RETURNING *`;
+    
+    const values = [
+      nombre, 
+      Math.round(Number(precio)) || 0, 
+      imagenes, 
+      reservado || false, 
+      motor, 
+      transmision, 
+      Math.round(Number(anio)) || 0, 
+      combustible, 
+      descripcion, 
+      Math.round(Number(kilometraje)) || 0, 
+      moneda, 
+      color,
+      etiqueta // <-- Nuevo campo
+    ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -110,11 +125,12 @@ app.post("/api/autos", async (req, res) => {
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color } = req.body;
+    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, etiqueta } = req.body;
     const query = `
-      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12
-      WHERE id=$13 RETURNING *`;
-    const values = [nombre, Math.round(Number(precio)) || 0, imagenes, reservado, motor, transmision, Math.round(Number(anio)) || 0, combustible, descripcion, Math.round(Number(kilometraje)) || 0, moneda, color, id];
+      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12, etiqueta=$13
+      WHERE id=$14 RETURNING *`;
+    
+    const values = [nombre, Math.round(Number(precio)) || 0, imagenes, reservado, motor, transmision, Math.round(Number(anio)) || 0, combustible, descripcion, Math.round(Number(kilometraje)) || 0, moneda, color, etiqueta, id];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {

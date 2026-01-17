@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
@@ -43,13 +43,15 @@ const inicializarTabla = async () => {
     
     // Verificamos si existe la columna color (por si la tabla ya existía de antes)
     await pool.query(`
-      DO $$ 
-      BEGIN 
-        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='autos' AND column_name='etiqueta') THEN
-          ALTER TABLE autos ADD COLUMN etiqueta VARCHAR(50);
-        END IF;
-      END $$;
-    `);
+    CREATE TABLE IF NOT EXISTS banners (
+      id SERIAL PRIMARY KEY,
+      imagen_url TEXT NOT NULL,
+      titulo VARCHAR(255),
+      activo BOOLEAN DEFAULT true,
+      orden INTEGER DEFAULT 0,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
     console.log("✅ Base de datos lista");
   } catch (err) {
@@ -145,6 +147,69 @@ app.delete("/api/autos/:id", async (req, res) => {
     res.json({ message: "Eliminado" });
   } catch (err) {
     res.status(500).json({ error: "Error al eliminar" });
+  }
+});
+
+// --- RUTAS PARA BANNERS ---
+
+// Obtener todos los banners (para el admin)
+app.get("/api/banners", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM banners ORDER BY orden ASC, id DESC");
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener banners" });
+  }
+});
+
+// Obtener solo banners activos (para la web pública)
+app.get("/api/banners/activos", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM banners WHERE activo = true ORDER BY orden ASC");
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener banners activos" });
+  }
+});
+
+// Guardar un nuevo banner
+app.post("/api/banners", async (req, res) => {
+  try {
+    const { imagen_url, titulo, orden } = req.body;
+    const query = `
+      INSERT INTO banners (imagen_url, titulo, orden) 
+      VALUES ($1, $2, $3) RETURNING *`;
+    const values = [imagen_url, titulo, orden || 0];
+    const result = await pool.query(query, values);
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Error al guardar banner" });
+  }
+});
+
+// Borrar un banner
+app.delete("/api/banners/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    await pool.query("DELETE FROM banners WHERE id = $1", [id]);
+    res.json({ message: "Banner eliminado" });
+  } catch (err) {
+    res.status(500).json({ error: "Error al eliminar banner" });
+  }
+});
+
+// Alternar estado activo/inactivo (opcional para el admin)
+app.patch("/api/banners/:id/estado", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { activo } = req.body;
+    const result = await pool.query(
+      "UPDATE banners SET activo = $1 WHERE id = $2 RETURNING *",
+      [activo, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: "Error al actualizar estado" });
   }
 });
 

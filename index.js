@@ -252,18 +252,17 @@ app.get("/share/auto/:slug", async (req, res) => {
   <meta property="og:image" content="${imagen}">
   <meta property="og:type" content="website">
   <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
-  <meta http-equiv="refresh" content="2;url=${FRONTEND_BASE_URL}/#catalogo">
+  <meta http-equiv="refresh" content="2;url=${FRONTEND_BASE_URL}/?view=${slug}">
 </head>
 <body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding-top:100px;">
   <img src="${imagen}" style="width:200px;border-radius:10px;margin-bottom:20px;"/>
   <h2>Norte Automotores</h2>
   <p>Cargando información de: <strong>${auto.nombre}</strong>...</p>
-  <script>
-    // Redirección por JS por si falla el meta-refresh
-    setTimeout(() => {
-      window.location.href = "${FRONTEND_BASE_URL}/#catalogo";
-    }, 2000);
-  </script>
+  script>
+  setTimeout(() => {
+    window.location.href = "${FRONTEND_BASE_URL}/?view=${slug}";
+  }, 2000);
+</script>
 </body>
 </html>
 `);

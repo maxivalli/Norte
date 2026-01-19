@@ -20,7 +20,7 @@ const pool = new Pool({
 // --- 2. MIGRACIÓN Y VERIFICACIÓN ---
 const inicializarTabla = async () => {
   try {
-    // Creamos la tabla si no existe
+    // Creamos la tabla con la columna 'tipo' incluida
     await pool.query(`
       CREATE TABLE IF NOT EXISTS autos (
         id SERIAL PRIMARY KEY,
@@ -37,11 +37,17 @@ const inicializarTabla = async () => {
         color VARCHAR(100),
         reservado BOOLEAN DEFAULT false,
         visitas INTEGER DEFAULT 0,
+        etiqueta VARCHAR(50),
+        tipo VARCHAR(50) DEFAULT 'Automóvil',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
 
-    // Verificamos si existe la columna color (por si la tabla ya existía de antes)
+    // Intento de agregar la columna 'tipo' por si la tabla ya existe
+    try {
+      await pool.query(`ALTER TABLE autos ADD COLUMN IF NOT EXISTS tipo VARCHAR(50) DEFAULT 'Automóvil'`);
+    } catch (e) { /* Columna ya existe */ }
+
     await pool.query(`
     CREATE TABLE IF NOT EXISTS banners (
       id SERIAL PRIMARY KEY,
@@ -53,7 +59,7 @@ const inicializarTabla = async () => {
     );
   `);
 
-    console.log("✅ Base de datos lista");
+    console.log("✅ Base de datos lista y actualizada");
   } catch (err) {
     console.error("❌ Error en inicialización de DB:", err.message);
   }
@@ -99,24 +105,15 @@ app.patch("/api/autos/:id/visita", async (req, res) => {
 app.post("/api/autos", async (req, res) => {
   try {
     const {
-      nombre,
-      precio,
-      imagenes,
-      reservado,
-      motor,
-      transmision,
-      anio,
-      combustible,
-      descripcion,
-      kilometraje,
-      moneda,
-      color,
-      etiqueta,
+      nombre, precio, imagenes, reservado, motor, transmision, 
+      anio, combustible, descripcion, kilometraje, moneda, 
+      color, etiqueta, tipo 
     } = req.body;
+    
     const query = `
       INSERT INTO autos 
-      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas, etiqueta) 
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, $13) RETURNING *`;
+      (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas, etiqueta, tipo) 
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, $13, $14) RETURNING *`;
 
     const values = [
       nombre,
@@ -131,7 +128,8 @@ app.post("/api/autos", async (req, res) => {
       Math.round(Number(kilometraje)) || 0,
       moneda,
       color,
-      etiqueta, // <-- Nuevo campo
+      etiqueta,
+      tipo || 'Automóvil' // <-- Guardamos el tipo
     ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
@@ -144,23 +142,17 @@ app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
     const {
-      nombre,
-      precio,
-      imagenes,
-      reservado,
-      motor,
-      transmision,
-      anio,
-      combustible,
-      descripcion,
-      kilometraje,
-      moneda,
-      color,
-      etiqueta,
+      nombre, precio, imagenes, reservado, motor, transmision, 
+      anio, combustible, descripcion, kilometraje, moneda, 
+      color, etiqueta, tipo 
     } = req.body;
+
     const query = `
-      UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12, etiqueta=$13
-      WHERE id=$14 RETURNING *`;
+      UPDATE autos SET 
+      nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, 
+      anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, 
+      color=$12, etiqueta=$13, tipo=$14
+      WHERE id=$15 RETURNING *`;
 
     const values = [
       nombre,
@@ -176,6 +168,7 @@ app.put("/api/autos/:id", async (req, res) => {
       moneda,
       color,
       etiqueta,
+      tipo, // <-- Actualizamos el tipo
       id,
     ];
     const result = await pool.query(query, values);
@@ -197,37 +190,28 @@ app.delete("/api/autos/:id", async (req, res) => {
 
 // --- RUTAS PARA BANNERS ---
 
-// Obtener todos los banners (para el admin)
 app.get("/api/banners", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM banners ORDER BY orden ASC, id DESC",
-    );
+    const result = await pool.query("SELECT * FROM banners ORDER BY orden ASC, id DESC");
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener banners" });
   }
 });
 
-// Obtener solo banners activos (para la web pública)
 app.get("/api/banners/activos", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM banners WHERE activo = true ORDER BY orden ASC",
-    );
+    const result = await pool.query("SELECT * FROM banners WHERE activo = true ORDER BY orden ASC");
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener banners activos" });
   }
 });
 
-// Guardar un nuevo banner
 app.post("/api/banners", async (req, res) => {
   try {
     const { imagen_url, titulo, orden } = req.body;
-    const query = `
-      INSERT INTO banners (imagen_url, titulo, orden) 
-      VALUES ($1, $2, $3) RETURNING *`;
+    const query = `INSERT INTO banners (imagen_url, titulo, orden) VALUES ($1, $2, $3) RETURNING *`;
     const values = [imagen_url, titulo, orden || 0];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
@@ -236,7 +220,6 @@ app.post("/api/banners", async (req, res) => {
   }
 });
 
-// Borrar un banner
 app.delete("/api/banners/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -247,50 +230,33 @@ app.delete("/api/banners/:id", async (req, res) => {
   }
 });
 
-// Alternar estado activo/inactivo (opcional para el admin)
 app.patch("/api/banners/:id/estado", async (req, res) => {
   try {
     const { id } = req.params;
     const { activo } = req.body;
-    const result = await pool.query(
-      "UPDATE banners SET activo = $1 WHERE id = $2 RETURNING *",
-      [activo, id],
-    );
+    const result = await pool.query("UPDATE banners SET activo = $1 WHERE id = $2 RETURNING *", [activo, id]);
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: "Error al actualizar estado" });
   }
 });
 
-// --- 5. RUTA PARA COMPARTIR (DEBE IR ANTES DEL COMODÍN) ---
+// --- 5. RUTA PARA COMPARTIR ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const FRONTEND_BASE_URL = "https://norteautomotores.up.railway.app";
 
   try {
-    // Traemos los autos para comparar el slug
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
-    // SI NO EXISTE EL AUTO, REDIRIGE AL HOME
-    if (!auto) {
-      console.log("Auto no encontrado para el slug:", slug);
-      return res.redirect(FRONTEND_BASE_URL);
-    }
+    if (!auto) return res.redirect(FRONTEND_BASE_URL);
 
     const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioFormat =
-      Number(auto.precio) === 0
-        ? "Consultar"
-        : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
+    const precioFormat = Number(auto.precio) === 0 ? "Consultar" : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
+    const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Ver más en Norte Automotores.`;
+    const imagen = auto.imagenes && auto.imagenes[0] ? auto.imagenes[0].replace("http://", "https://") : "";
 
-    const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Motor ${auto.motor}. Ver más detalles en Norte Automotores.`;
-    const imagen =
-      auto.imagenes && auto.imagenes[0]
-        ? auto.imagenes[0].replace("http://", "https://")
-        : "";
-
-    // Enviamos el HTML con Meta Tags para que WhatsApp/FB lo lean
     res.send(`
 <!DOCTYPE html>
 <html lang="es">
@@ -305,16 +271,18 @@ app.get("/share/auto/:slug", async (req, res) => {
   <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
   <meta http-equiv="refresh" content="2;url=${FRONTEND_BASE_URL}/auto/${slug}">
 </head>
-
+<body style="background:#1a1a1a;color:white;text-align:center;padding-top:100px;font-family:sans-serif;">
+  <h2>Norte Automotores</h2>
+  <p>Cargando información del vehículo...</p>
+</body>
 </html>
 `);
   } catch (err) {
-    console.error("Error en share:", err);
     res.redirect(FRONTEND_BASE_URL);
   }
 });
 
-// --- 6. REACT COMODÍN (SIEMPRE AL FINAL) ---
+// --- 6. REACT COMODÍN ---
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });

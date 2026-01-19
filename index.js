@@ -2,7 +2,7 @@ const express = require("express");
 const { Pool } = require("pg");
 const cors = require("cors");
 const path = require("path");
-require('dotenv').config();
+require("dotenv").config();
 
 const app = express();
 
@@ -11,10 +11,10 @@ app.use(express.json());
 app.use(cors());
 app.use(express.static(path.join(__dirname, "dist")));
 
-const isProduction = process.env.NODE_ENV === 'production';
+const isProduction = process.env.NODE_ENV === "production";
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
-  ssl: isProduction ? { rejectUnauthorized: false } : false
+  connectionString: process.env.DATABASE_URL,
+  ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
 // --- 2. MIGRACIÓN Y VERIFICACIÓN ---
@@ -40,7 +40,7 @@ const inicializarTabla = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    
+
     // Verificamos si existe la columna color (por si la tabla ya existía de antes)
     await pool.query(`
     CREATE TABLE IF NOT EXISTS banners (
@@ -64,7 +64,9 @@ inicializarTabla();
 // --- 3. FUNCIONES AUXILIARES ---
 const crearSlug = (nombre) => {
   if (!nombre) return "";
-  return nombre.toLowerCase().trim()
+  return nombre
+    .toLowerCase()
+    .trim()
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -85,8 +87,8 @@ app.patch("/api/autos/:id/visita", async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
-      `UPDATE autos SET visitas = visitas + 1 WHERE id = $1 RETURNING visitas`, 
-      [id]
+      `UPDATE autos SET visitas = visitas + 1 WHERE id = $1 RETURNING visitas`,
+      [id],
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -96,26 +98,40 @@ app.patch("/api/autos/:id/visita", async (req, res) => {
 
 app.post("/api/autos", async (req, res) => {
   try {
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, etiqueta } = req.body;
+    const {
+      nombre,
+      precio,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      anio,
+      combustible,
+      descripcion,
+      kilometraje,
+      moneda,
+      color,
+      etiqueta,
+    } = req.body;
     const query = `
       INSERT INTO autos 
       (nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, visitas, etiqueta) 
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, $13) RETURNING *`;
-    
+
     const values = [
-      nombre, 
-      Math.round(Number(precio)) || 0, 
-      imagenes, 
-      reservado || false, 
-      motor, 
-      transmision, 
-      Math.round(Number(anio)) || 0, 
-      combustible, 
-      descripcion, 
-      Math.round(Number(kilometraje)) || 0, 
-      moneda, 
+      nombre,
+      Math.round(Number(precio)) || 0,
+      imagenes,
+      reservado || false,
+      motor,
+      transmision,
+      Math.round(Number(anio)) || 0,
+      combustible,
+      descripcion,
+      Math.round(Number(kilometraje)) || 0,
+      moneda,
       color,
-      etiqueta // <-- Nuevo campo
+      etiqueta, // <-- Nuevo campo
     ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
@@ -127,12 +143,41 @@ app.post("/api/autos", async (req, res) => {
 app.put("/api/autos/:id", async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, precio, imagenes, reservado, motor, transmision, anio, combustible, descripcion, kilometraje, moneda, color, etiqueta } = req.body;
+    const {
+      nombre,
+      precio,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      anio,
+      combustible,
+      descripcion,
+      kilometraje,
+      moneda,
+      color,
+      etiqueta,
+    } = req.body;
     const query = `
       UPDATE autos SET nombre=$1, precio=$2, imagenes=$3, reservado=$4, motor=$5, transmision=$6, anio=$7, combustible=$8, descripcion=$9, kilometraje=$10, moneda=$11, color=$12, etiqueta=$13
       WHERE id=$14 RETURNING *`;
-    
-    const values = [nombre, Math.round(Number(precio)) || 0, imagenes, reservado, motor, transmision, Math.round(Number(anio)) || 0, combustible, descripcion, Math.round(Number(kilometraje)) || 0, moneda, color, etiqueta, id];
+
+    const values = [
+      nombre,
+      Math.round(Number(precio)) || 0,
+      imagenes,
+      reservado,
+      motor,
+      transmision,
+      Math.round(Number(anio)) || 0,
+      combustible,
+      descripcion,
+      Math.round(Number(kilometraje)) || 0,
+      moneda,
+      color,
+      etiqueta,
+      id,
+    ];
     const result = await pool.query(query, values);
     res.json(result.rows[0]);
   } catch (err) {
@@ -155,7 +200,9 @@ app.delete("/api/autos/:id", async (req, res) => {
 // Obtener todos los banners (para el admin)
 app.get("/api/banners", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM banners ORDER BY orden ASC, id DESC");
+    const result = await pool.query(
+      "SELECT * FROM banners ORDER BY orden ASC, id DESC",
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener banners" });
@@ -165,7 +212,9 @@ app.get("/api/banners", async (req, res) => {
 // Obtener solo banners activos (para la web pública)
 app.get("/api/banners/activos", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM banners WHERE activo = true ORDER BY orden ASC");
+    const result = await pool.query(
+      "SELECT * FROM banners WHERE activo = true ORDER BY orden ASC",
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: "Error al obtener banners activos" });
@@ -205,7 +254,7 @@ app.patch("/api/banners/:id/estado", async (req, res) => {
     const { activo } = req.body;
     const result = await pool.query(
       "UPDATE banners SET activo = $1 WHERE id = $2 RETURNING *",
-      [activo, id]
+      [activo, id],
     );
     res.json(result.rows[0]);
   } catch (err) {
@@ -230,14 +279,16 @@ app.get("/share/auto/:slug", async (req, res) => {
     }
 
     const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioFormat = Number(auto.precio) === 0 
-      ? "Consultar" 
-      : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
-    
+    const precioFormat =
+      Number(auto.precio) === 0
+        ? "Consultar"
+        : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
+
     const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Motor ${auto.motor}. Ver más detalles en Norte Automotores.`;
-    const imagen = auto.imagenes && auto.imagenes[0] 
-      ? auto.imagenes[0].replace("http://", "https://") 
-      : "";
+    const imagen =
+      auto.imagenes && auto.imagenes[0]
+        ? auto.imagenes[0].replace("http://", "https://")
+        : "";
 
     // Enviamos el HTML con Meta Tags para que WhatsApp/FB lo lean
     res.send(`
@@ -258,7 +309,7 @@ app.get("/share/auto/:slug", async (req, res) => {
   <img src="${imagen}" style="width:200px;border-radius:10px;margin-bottom:20px;"/>
   <h2>Norte Automotores</h2>
   <p>Cargando información de: <strong>${auto.nombre}</strong>...</p>
-  script>
+  <script>
   setTimeout(() => {
     window.location.href = "${FRONTEND_BASE_URL}/auto/${slug}";
   }, 2000);
@@ -266,7 +317,6 @@ app.get("/share/auto/:slug", async (req, res) => {
 </body>
 </html>
 `);
-
   } catch (err) {
     console.error("Error en share:", err);
     res.redirect(FRONTEND_BASE_URL);

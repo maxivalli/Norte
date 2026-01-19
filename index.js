@@ -13,7 +13,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === 'production';
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL, 
+  connectionString: process.env.DATABASE_PUBLIC, 
   ssl: isProduction ? { rejectUnauthorized: false } : false
 });
 
@@ -213,61 +213,68 @@ app.patch("/api/banners/:id/estado", async (req, res) => {
   }
 });
 
-// --- 5. RUTA PARA COMPARTIR (OPTIMIZADA PARA FACEBOOK) ---
+// --- 5. RUTA PARA COMPARTIR (DEBE IR ANTES DEL COMODÍN) ---
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const FRONTEND_BASE_URL = "https://norteautomotores.up.railway.app";
 
   try {
-    // Buscamos todos para encontrar el match de slug (o podrías optimizarlo con una columna slug en DB)
+    // Traemos los autos para comparar el slug
     const result = await pool.query("SELECT * FROM autos");
     const auto = result.rows.find((a) => crearSlug(a.nombre) === slug);
 
-    if (!auto) return res.redirect(FRONTEND_BASE_URL);
+    // SI NO EXISTE EL AUTO, REDIRIGE AL HOME
+    if (!auto) {
+      console.log("Auto no encontrado para el slug:", slug);
+      return res.redirect(FRONTEND_BASE_URL);
+    }
 
     const titulo = `${auto.nombre} | Norte Automotores`;
-    const precioFormat = Number(auto.precio) === 0 ? "Consultar" : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
-    const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Motor ${auto.motor}. Ver más detalles en Norte Automotores.`;
+    const precioFormat = Number(auto.precio) === 0 
+      ? "Consultar" 
+      : `${auto.moneda} ${Math.round(auto.precio).toLocaleString("es-AR")}`;
     
-    // Aseguramos que la imagen sea HTTPS y de buen tamaño para FB
+    const descripcion = `Precio: ${precioFormat} - Año: ${auto.anio}. Motor ${auto.motor}. Ver más detalles en Norte Automotores.`;
     const imagen = auto.imagenes && auto.imagenes[0] 
       ? auto.imagenes[0].replace("http://", "https://") 
       : "";
 
+    // Enviamos el HTML con Meta Tags para que WhatsApp/FB lo lean
     res.send(`
 <!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${titulo}</title>
-
   <meta property="og:title" content="${titulo}">
   <meta property="og:description" content="${descripcion}">
   <meta property="og:image" content="${imagen}">
-  <meta property="og:image:secure_url" content="${imagen}">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
   <meta property="og:type" content="website">
   <meta property="og:url" content="${FRONTEND_BASE_URL}/share/auto/${slug}">
-  <meta property="og:site_name" content="Norte Automotores">
-
-  <!-- NO REDIRIGIR INMEDIATAMENTE -->
-  <meta http-equiv="refresh" content="5;url=${FRONTEND_BASE_URL}/#catalogo">
+  <meta http-equiv="refresh" content="2;url=${FRONTEND_BASE_URL}/#catalogo">
 </head>
-<body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding-top:50px;">
+<body style="background:#1a1a1a;color:white;font-family:sans-serif;text-align:center;padding-top:100px;">
+  <img src="${imagen}" style="width:200px;border-radius:10px;margin-bottom:20px;"/>
   <h2>Norte Automotores</h2>
-  <p>Cargando vehículo...</p>
-  <p>Si no redirige automáticamente, <a style="color:#fff;" href="${FRONTEND_BASE_URL}/#catalogo">tocá acá</a></p>
+  <p>Cargando información de: <strong>${auto.nombre}</strong>...</p>
+  <script>
+    // Redirección por JS por si falla el meta-refresh
+    setTimeout(() => {
+      window.location.href = "${FRONTEND_BASE_URL}/#catalogo";
+    }, 2000);
+  </script>
 </body>
 </html>
 `);
 
   } catch (err) {
+    console.error("Error en share:", err);
     res.redirect(FRONTEND_BASE_URL);
   }
 });
 
-// --- 6. REACT COMODÍN ---
+// --- 6. REACT COMODÍN (SIEMPRE AL FINAL) ---
 app.get(/.*/, (req, res) => {
   res.sendFile(path.join(__dirname, "dist", "index.html"));
 });

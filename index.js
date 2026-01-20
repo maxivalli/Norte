@@ -16,7 +16,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === "production";
 const pool = new Pool({
-  connectionString: process.env.DATABASE_PUBLIC,
+  connectionString: process.env.DATABASE_URL,
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
@@ -266,7 +266,7 @@ app.patch("/api/banners/:id/estado", async (req, res) => {
 });
 
 // --- 5. RUTA PARA COMPARTIR (DEBE IR ANTES DEL COMODÍN) -----------------------------------------
-/ --- 5. RUTA PARA COMPARTIR (DEBE IR ANTES DEL COMODÍN) ---
+
 app.get("/share/auto/:slug", async (req, res) => {
   const { slug } = req.params;
   const FRONTEND_BASE_URL = "https://norteautomotores.up.railway.app";

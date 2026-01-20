@@ -18,7 +18,7 @@ app.use(express.static(path.join(__dirname, "dist")));
 
 const isProduction = process.env.NODE_ENV === "production";
 const pool = new Pool({
-  connectionString: process.env.DATABASE_PUBLIC,
+  connectionString: process.env.DATABASE_URL,
   ssl: isProduction ? { rejectUnauthorized: false } : false,
 });
 
